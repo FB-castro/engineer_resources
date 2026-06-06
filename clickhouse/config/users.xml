@@ -1,0 +1,37 @@
+<clickhouse>
+    <users>
+        <default>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>0</access_management>
+        </default>
+        <!-- Usuário principal — senha via env CLICKHOUSE_PASSWORD -->
+        <admin>
+            <password_sha256_hex replace="replace_with_sha256_of_your_password"/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+        </admin>
+        <!-- Usuário read-only para Metabase -->
+        <metabase>
+            <password_sha256_hex replace="replace_with_sha256_of_metabase_password"/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>readonly</profile>
+            <quota>default</quota>
+            <access_management>0</access_management>
+            <databases>
+                <gold/>
+                <silver/>
+            </databases>
+        </metabase>
+    </users>
+</clickhouse>

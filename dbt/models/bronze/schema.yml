@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: bronze_example
+    description: "Exemplo de modelo bronze — dados brutos vindos do Airbyte via MinIO"
+    columns:
+      - name: id
+        description: "Chave primária da fonte"
+        tests:
+          - not_null
+      - name: _airbyte_extracted_at
+        description: "Timestamp de extração pelo Airbyte"
+        tests:
+          - not_null

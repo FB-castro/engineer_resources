@@ -1,0 +1,89 @@
+# ─────────────────────────────────────────────
+# Segredos e configuração local
+# ─────────────────────────────────────────────
+.env
+*.env.local
+*.env.*.local
+
+# ─────────────────────────────────────────────
+# Airflow
+# ─────────────────────────────────────────────
+airflow/logs/
+airflow/plugins/__pycache__/
+airflow/dags/__pycache__/
+airflow/dags/**/__pycache__/
+*.pyc
+
+# ─────────────────────────────────────────────
+# dbt
+# ─────────────────────────────────────────────
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+
+# ─────────────────────────────────────────────
+# Jupyter
+# ─────────────────────────────────────────────
+spark/notebooks/.ipynb_checkpoints/
+spark/notebooks/**/.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ─────────────────────────────────────────────
+# Docker volumes (dados persistidos localmente)
+# ─────────────────────────────────────────────
+volumes/
+data/
+
+# ─────────────────────────────────────────────
+# Spark
+# ─────────────────────────────────────────────
+spark/logs/
+spark/work/
+*.log
+
+# ─────────────────────────────────────────────
+# Python
+# ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.eggs/
+*.egg-info/
+dist/
+build/
+
+# ─────────────────────────────────────────────
+# OS
+# ─────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+
+# ─────────────────────────────────────────────
+# IDEs
+# ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─────────────────────────────────────────────
+# Arquivos temporários
+# ─────────────────────────────────────────────
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig

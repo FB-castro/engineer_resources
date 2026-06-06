@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: airbyte_raw
+    description: "Dados brutos carregados pelo Airbyte no ClickHouse"
+    database: bronze
+    schema: airbyte_raw
+    tables:
+      - name: example_table
+        description: "Tabela de exemplo — substituir pelo conector real do Airbyte"
+        columns:
+          - name: id
+          - name: raw_data
+          - name: source_system
+          - name: _airbyte_extracted_at

@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────
+# ⚠️  AIRBYTE — DOCKER COMPOSE DEPRECIADO
+# ─────────────────────────────────────────────
+#
+# O suporte a Docker Compose foi oficialmente removido
+# pelo Airbyte na versão 1.0 (agosto 2024).
+#
+# A forma atual de instalar o Airbyte OSS é via abctl,
+# que usa Kubernetes local (k3d) transparentemente.
+#
+# Para instalar:
+#
+#   make up-airbyte
+#
+# Ou manualmente:
+#
+#   bash scripts/install-airbyte.sh
+#
+# Para parar:
+#
+#   abctl local uninstall
+#
+# Docs oficiais:
+#   https://docs.airbyte.com/platform/deploying-airbyte
+#   https://docs.airbyte.com/platform/deploying-airbyte/migrating-from-docker-compose
+#
+# ─────────────────────────────────────────────
+#
+# INTEGRAÇÃO COM A STACK PRINCIPAL
+# ─────────────────────────────────────────────
+# O Airbyte roda numa rede k3d separada.
+# Para integrar com os serviços desta stack use:
+#
+#   Host (do Airflow/dbt): host.docker.internal
+#   Porta Airbyte API:     8000  (padrão abctl)
+#
+# Já configurado no docker-compose.yml:
+#   AIRBYTE_HOST: host.docker.internal
+#   AIRBYTE_PORT: 8000
+#
+# Para apontar o Airbyte → ClickHouse, use no conector:
+#   Host:     host.docker.internal
+#   Port:     8123
+#   Database: airbyte_raw
+#   User/Pass: vars do .env
+#
+# ─────────────────────────────────────────────

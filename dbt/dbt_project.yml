@@ -1,0 +1,47 @@
+name: 'data_platform'
+version: '1.0.0'
+config-version: 2
+
+profile: 'data_platform'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# ─────────────────────────────────────────────
+# Medallion architecture
+# bronze  → raw data from Airbyte (ReplacingMergeTree)
+# silver  → cleaned, typed, deduplicated (ReplacingMergeTree)
+# gold    → business aggregates for Metabase (AggregatingMergeTree / SummingMergeTree)
+# ─────────────────────────────────────────────
+models:
+  data_platform:
+    bronze:
+      +schema: bronze
+      +materialized: incremental
+      +incremental_strategy: append
+      +engine: "ReplacingMergeTree()"
+      +order_by: [id]
+      +tags: ["bronze", "raw"]
+
+    silver:
+      +schema: silver
+      +materialized: incremental
+      +incremental_strategy: delete+insert
+      +engine: "ReplacingMergeTree()"
+      +order_by: [id]
+      +tags: ["silver", "cleaned"]
+
+    gold:
+      +schema: gold
+      +materialized: table
+      +engine: "AggregatingMergeTree()"
+      +tags: ["gold", "agg"]

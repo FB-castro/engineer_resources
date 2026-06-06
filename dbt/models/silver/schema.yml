@@ -1,0 +1,13 @@
+version: 2
+
+models:
+  - name: silver_example
+    description: "Camada silver — dados limpos e tipados"
+    columns:
+      - name: id
+        tests:
+          - not_null
+          - unique
+      - name: processed_at
+        tests:
+          - not_null

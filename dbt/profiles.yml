@@ -1,0 +1,33 @@
+# dbt-clickhouse 1.10.0 + ClickHouse 26.3-lts
+data_platform:
+  target: dev
+  outputs:
+    dev:
+      type: clickhouse
+      schema: bronze          # database padrão
+      host: "{{ env_var('CLICKHOUSE_HOST', 'localhost') }}"
+      port: 8123
+      user: "{{ env_var('CLICKHOUSE_USER', 'default') }}"
+      password: "{{ env_var('CLICKHOUSE_PASSWORD', '') }}"
+      secure: false
+      verify: false
+      connect_timeout: 10
+      send_receive_timeout: 300
+      sync_request_timeout: 5
+      compress_block_size: 1048576
+      compression: lz4
+      # dbt-clickhouse 1.8+ usa clickhouse-connect por padrão (sem driver http_client)
+      custom_settings:
+        max_execution_time: 300
+        allow_experimental_lightweight_delete: 1
+        allow_experimental_parallel_reading_from_replicas: 0
+
+    prod:
+      type: clickhouse
+      schema: bronze
+      host: "{{ env_var('CLICKHOUSE_HOST') }}"
+      port: "{{ env_var('CLICKHOUSE_PORT', '8123') | int }}"
+      user: "{{ env_var('CLICKHOUSE_USER') }}"
+      password: "{{ env_var('CLICKHOUSE_PASSWORD') }}"
+      secure: true
+      verify: true

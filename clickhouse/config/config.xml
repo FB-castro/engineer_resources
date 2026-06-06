@@ -1,0 +1,31 @@
+<clickhouse>
+    <!-- Permite conexões de qualquer host (ajustar em produção) -->
+    <listen_host>::</listen_host>
+
+    <!-- Aumenta limites para workloads analíticos -->
+    <max_connections>1000</max_connections>
+    <max_concurrent_queries>200</max_concurrent_queries>
+
+    <!-- S3 / MinIO como disco externo (opcional) -->
+    <!--
+    <storage_configuration>
+        <disks>
+            <s3_disk>
+                <type>s3</type>
+                <endpoint>http://minio:9000/clickhouse/</endpoint>
+                <access_key_id>MINIO_ROOT_USER</access_key_id>
+                <secret_access_key>MINIO_ROOT_PASSWORD</secret_access_key>
+            </s3_disk>
+        </disks>
+        <policies>
+            <s3_policy>
+                <volumes>
+                    <main>
+                        <disk>s3_disk</disk>
+                    </main>
+                </volumes>
+            </s3_policy>
+        </policies>
+    </storage_configuration>
+    -->
+</clickhouse>

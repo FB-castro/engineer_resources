@@ -1,0 +1,320 @@
+version: '3.8'
+
+# ─────────────────────────────────────────────
+# Versões da stack
+#   Airflow     3.2.1
+#   PostgreSQL  17
+#   Redis       7.4
+#   ClickHouse  26.3-lts
+#   Spark       4.1.1  (apache/spark-py oficial)
+#   Metabase    v0.61.0
+#   MinIO       RELEASE mais recente (rolling)
+# ─────────────────────────────────────────────
+
+# ── Shared Airflow config (DRY anchor) ────────
+x-airflow-common: &airflow-common
+  image: apache/airflow:3.2.1
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
+    AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+    # Airflow 3.x — habilita task SDK e nova API REST
+    AIRFLOW__CORE__ENABLE_XCOM_PICKLING: 'false'
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: '30'
+    # MinIO / S3
+    AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+    AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    # Airbyte (via abctl — porta local)
+    AIRBYTE_HOST: host.docker.internal
+    AIRBYTE_PORT: 8000
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./dbt:/opt/airflow/dbt
+  user: "${AIRFLOW_UID:-50000}:0"
+  networks:
+    - data-platform
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+# ─────────────────────────────────────────────
+# Services
+# ─────────────────────────────────────────────
+services:
+
+  # ── Databases ──────────────────────────────
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: dp-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - data-platform
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: dp-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - data-platform
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
+
+  clickhouse:
+    # 26.3-lts = branch LTS atual (maio 2026)
+    image: clickhouse/clickhouse-server:26.3-lts
+    container_name: dp-clickhouse
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/config/users.xml:/etc/clickhouse-server/users.d/users.xml
+      - ./clickhouse/config/config.xml:/etc/clickhouse-server/config.d/config.xml
+      - ./scripts/init-clickhouse.sh:/docker-entrypoint-initdb.d/init.sh
+    ports:
+      - "8123:8123"   # HTTP
+      - "9000:9000"   # Native / gRPC
+    networks:
+      - data-platform
+    healthcheck:
+      test: ["CMD", "clickhouse-client",
+             "--user", "${CLICKHOUSE_USER}",
+             "--password", "${CLICKHOUSE_PASSWORD}",
+             "--query", "SELECT 1"]
+      interval: 10s
+      retries: 5
+
+  # ── Object Storage ──────────────────────────
+
+  minio:
+    image: minio/minio:latest
+    container_name: dp-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9002:9000"   # S3 API
+      - "9001:9001"   # Console
+    networks:
+      - data-platform
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: dp-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: /bin/sh /init/create-buckets.sh
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - ./scripts/create-buckets.sh:/init/create-buckets.sh
+    networks:
+      - data-platform
+    restart: on-failure
+
+  # ── Spark 4.1.1 (imagem oficial Apache) ─────
+  # Nota: Bitnami passou a ser comercial; usamos apache/spark-py
+
+  spark-master:
+    image: apache/spark-py:4.1.1
+    container_name: dp-spark-master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    environment:
+      SPARK_MASTER_HOST: spark-master
+      SPARK_MASTER_PORT: 7077
+      SPARK_MASTER_WEBUI_PORT: 8080
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "8080:8080"   # Spark Master UI
+      - "7077:7077"   # Spark master
+    volumes:
+      - spark_logs:/opt/spark/logs
+      - ./jupyter/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+    networks:
+      - data-platform
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 15s
+      retries: 5
+
+  spark-worker:
+    image: apache/spark-py:4.1.1
+    container_name: dp-spark-worker
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker
+      spark://spark-master:7077
+    environment:
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-4g}
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-2}
+      SPARK_WORKER_WEBUI_PORT: 8081
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "8081:8081"   # Worker UI
+    volumes:
+      - ./jupyter/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    networks:
+      - data-platform
+
+  jupyter:
+    build:
+      context: ./jupyter
+      dockerfile: Dockerfile
+    container_name: dp-jupyter
+    environment:
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN}
+      SPARK_MASTER: spark://spark-master:7077
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_ENDPOINT: http://minio:9000
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    volumes:
+      - ./spark/notebooks:/home/jovyan/work
+    ports:
+      - "8888:8888"
+    networks:
+      - data-platform
+    depends_on:
+      spark-master:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+
+  # ── Airflow 3.2.1 ───────────────────────────
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: dp-airflow-webserver
+    command: webserver
+    ports:
+      - "8082:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: dp-airflow-scheduler
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  airflow-worker:
+    <<: *airflow-common
+    container_name: dp-airflow-worker
+    command: celery worker
+    environment:
+      <<: *airflow-common-env
+      DUMB_INIT_SETSID: '0'
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: dp-airflow-triggerer
+    command: triggerer
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: dp-airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        # Airflow 3.x usa 'db migrate' (não mais 'db upgrade')
+        airflow db migrate
+        airflow users create \
+          --username ${AIRFLOW_ADMIN_USER} \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email ${AIRFLOW_ADMIN_EMAIL} \
+          --password ${AIRFLOW_ADMIN_PASSWORD}
+    restart: on-failure
+
+  # ── Visualization ───────────────────────────
+
+  metabase:
+    image: metabase/metabase:v0.61.0
+    container_name: dp-metabase
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: metabase
+      MB_DB_PORT: 5432
+      MB_DB_USER: ${POSTGRES_USER}
+      MB_DB_PASS: ${POSTGRES_PASSWORD}
+      MB_DB_HOST: postgres
+    ports:
+      - "3000:3000"
+    networks:
+      - data-platform
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3000/api/health"]
+      interval: 30s
+      retries: 5
+
+# ─────────────────────────────────────────────
+# Volumes & Networks
+# ─────────────────────────────────────────────
+volumes:
+  postgres_data:
+  clickhouse_data:
+  minio_data:
+  spark_logs:
+
+networks:
+  data-platform:
+    name: data-platform
+    driver: bridge
