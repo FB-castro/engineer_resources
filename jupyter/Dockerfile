@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────
-# JupyterLab + PySpark 4.1.1
+# JupyterLab + PySpark 4.0.1
 # Base: jupyter/base-notebook com Python 3.12
 # ─────────────────────────────────────────────
 FROM quay.io/jupyter/base-notebook:python-3.12
@@ -15,12 +15,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
 # Instala pacotes Python
+# Nota de compatibilidade:
+#   - dbt-clickhouse==1.10.0 exige clickhouse-connect<0.8 (deixamos o pip resolver)
+#   - delta-spark não tem release compatível com pyspark 4.x; usamos apenas pyspark
 RUN pip install --no-cache-dir \
-    # Spark 4.0.1 + Delta Lake 4.x
+    # Spark 4.0.1 (sem delta-spark — incompatível com Spark 4.x por enquanto)
     pyspark==4.0.1 \
-    delta-spark==4.0.0 \
-    # ClickHouse
-    clickhouse-connect==0.8.14 \
+    # ClickHouse — versão resolvida pelo dbt-clickhouse automaticamente
+    clickhouse-connect \
     # S3 / MinIO
     boto3==1.35.0 \
     s3fs==2024.10.0 \
@@ -28,7 +30,7 @@ RUN pip install --no-cache-dir \
     # Data wrangling
     pandas==2.2.3 \
     polars==1.6.0 \
-    # dbt (para rodar no notebook)
+    # dbt (para rodar transformações no notebook)
     dbt-core==1.10.0 \
     dbt-clickhouse==1.10.0 \
     # Qualidade de dados

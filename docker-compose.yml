@@ -86,8 +86,8 @@ services:
       retries: 5
 
   clickhouse:
-    # lts = tag oficial do Docker Hub para o branch LTS atual (26.3.12.3)
-    image: clickhouse/clickhouse-server:lts
+    # 26.3 = versão LTS atual (26.3.12.3) — equivalente à tag lts
+    image: clickhouse/clickhouse-server:26.3
     container_name: dp-clickhouse
     environment:
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
@@ -282,7 +282,7 @@ services:
   # ── Visualization ───────────────────────────
 
   metabase:
-    image: metabase/metabase:v0.61.0
+    image: metabase/metabase:v0.61.3.6
     container_name: dp-metabase
     environment:
       MB_DB_TYPE: postgres
