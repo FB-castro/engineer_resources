@@ -179,7 +179,7 @@ spark = SparkSession.builder \
     .appName("teste-conexao") \
     .getOrCreate()
 
-print(spark.version)  # deve imprimir 4.1.1
+print(spark.version)  # deve imprimir 4.0.1
 spark.stop()
 ```
 

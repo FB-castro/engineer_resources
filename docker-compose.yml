@@ -1,12 +1,10 @@
-version: '3.8'
-
 # ─────────────────────────────────────────────
 # Versões da stack
 #   Airflow     3.2.1
 #   PostgreSQL  17
 #   Redis       7.4
 #   ClickHouse  26.3-lts
-#   Spark       4.1.1  (apache/spark-py oficial)
+#   Spark       4.0.1  (imagem oficial docker.io/spark)
 #   Metabase    v0.61.0
 #   MinIO       RELEASE mais recente (rolling)
 # ─────────────────────────────────────────────
@@ -88,8 +86,8 @@ services:
       retries: 5
 
   clickhouse:
-    # 26.3-lts = branch LTS atual (maio 2026)
-    image: clickhouse/clickhouse-server:26.3-lts
+    # lts = tag oficial do Docker Hub para o branch LTS atual (26.3.12.3)
+    image: clickhouse/clickhouse-server:lts
     container_name: dp-clickhouse
     environment:
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
@@ -150,11 +148,11 @@ services:
       - data-platform
     restart: on-failure
 
-  # ── Spark 4.1.1 (imagem oficial Apache) ─────
-  # Nota: Bitnami passou a ser comercial; usamos apache/spark-py
+  # ── Spark 4.0.1 (imagem oficial Docker Hub: docker.io/spark) ──
+  # apache/spark-py foi abandonado na v3.4.0; imagem oficial é "spark"
 
   spark-master:
-    image: apache/spark-py:4.1.1
+    image: spark:4.0.1-python3
     container_name: dp-spark-master
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     environment:
@@ -177,7 +175,7 @@ services:
       retries: 5
 
   spark-worker:
-    image: apache/spark-py:4.1.1
+    image: spark:4.0.1-python3
     container_name: dp-spark-worker
     command: >
       /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker

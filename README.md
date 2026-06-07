@@ -21,8 +21,8 @@ Fontes → Airbyte → MinIO (raw-landing)
 | Serviço              | Versão       | URL                        | Credenciais padrão           |
 |---------------------|--------------|----------------------------|------------------------------|
 | Airflow              | 3.2.1        | http://localhost:8082       | admin / (ver .env)           |
-| JupyterLab + PySpark | 4.1.1        | http://localhost:8888       | token no .env                |
-| Spark Master UI      | 4.1.1        | http://localhost:8080       | —                            |
+| JupyterLab + PySpark | 4.0.1        | http://localhost:8888       | token no .env                |
+| Spark Master UI      | 4.0.1        | http://localhost:8080       | —                            |
 | MinIO Console        | latest       | http://localhost:9001       | minioadmin / (ver .env)      |
 | ClickHouse HTTP      | 26.3-lts     | http://localhost:8123       | admin / (ver .env)           |
 | Metabase             | v0.61.0      | http://localhost:3000       | configurar no primeiro uso   |

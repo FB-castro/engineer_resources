@@ -16,8 +16,8 @@ ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
 # Instala pacotes Python
 RUN pip install --no-cache-dir \
-    # Spark 4.1.1 + Delta Lake 4.x
-    pyspark==4.1.1 \
+    # Spark 4.0.1 + Delta Lake 4.x
+    pyspark==4.0.1 \
     delta-spark==4.0.0 \
     # ClickHouse
     clickhouse-connect==0.8.14 \
