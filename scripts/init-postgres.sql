@@ -1,6 +1,9 @@
--- Cria databases para cada serviço que compartilha o Postgres
-CREATE DATABASE IF NOT EXISTS metabase;
-CREATE DATABASE IF NOT EXISTS airflow;
+-- PostgreSQL não suporta "CREATE DATABASE IF NOT EXISTS"
+-- Usa SELECT + \gexec para criar apenas se não existir
 
--- Airbyte usa banco próprio (airbyte-db container), mas caso queira consolidar:
--- CREATE DATABASE IF NOT EXISTS airbyte;
+SELECT 'CREATE DATABASE metabase'
+WHERE NOT EXISTS (
+    SELECT FROM pg_database WHERE datname = 'metabase'
+)\gexec
+
+-- airflow já é criado pelo POSTGRES_DB no docker-compose.yml
