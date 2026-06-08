@@ -3,9 +3,9 @@
 #   Airflow     3.2.1
 #   PostgreSQL  17
 #   Redis       7.4
-#   ClickHouse  26.3-lts
+#   ClickHouse  26.3 (LTS)
 #   Spark       4.0.1  (imagem oficial docker.io/spark)
-#   Metabase    v0.61.0
+#   Metabase    v0.61.3.6
 #   MinIO       RELEASE mais recente (rolling)
 # ─────────────────────────────────────────────
 
@@ -14,17 +14,21 @@ x-airflow-common: &airflow-common
   image: apache/airflow:3.2.1
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    # Airflow 3.x: FAB auth manager (necessário para airflow-init criar usuário via _AIRFLOW_WWW_USER_*)
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
-    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
     AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
-    AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
-    # Airflow 3.x — habilita task SDK e nova API REST
+    # Airflow 3.x: execution API server (componente separado do scheduler)
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    # JWT auth para comunicação interna entre componentes Airflow 3.x
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_SECRET_KEY}
+    AIRFLOW__API_AUTH__JWT_ISSUER: 'airflow'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     AIRFLOW__CORE__ENABLE_XCOM_PICKLING: 'false'
-    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: '30'
     # MinIO / S3
     AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
     AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
@@ -36,11 +40,12 @@ x-airflow-common: &airflow-common
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
     - ./airflow/plugins:/opt/airflow/plugins
+    - ./airflow/config:/opt/airflow/config
     - ./dbt:/opt/airflow/dbt
   user: "${AIRFLOW_UID:-50000}:0"
   networks:
     - data-platform
-  depends_on:
+  depends_on: &airflow-common-depends-on
     postgres:
       condition: service_healthy
     redis:
@@ -225,18 +230,27 @@ services:
         condition: service_healthy
 
   # ── Airflow 3.2.1 ───────────────────────────
+  # Nota: Airflow 3.x separou "webserver" em dois componentes:
+  #   airflow-apiserver  → API REST + UI  (era airflow-webserver)
+  #   airflow-dag-processor → processa arquivos de DAG (era parte do scheduler)
 
-  airflow-webserver:
+  airflow-apiserver:
     <<: *airflow-common
-    container_name: dp-airflow-webserver
-    command: webserver
+    container_name: dp-airflow-apiserver
+    command: api-server
     ports:
       - "8082:8080"
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
 
   airflow-scheduler:
     <<: *airflow-common
@@ -247,6 +261,28 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: dp-airflow-dag-processor
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
 
   airflow-worker:
     <<: *airflow-common
@@ -255,28 +291,56 @@ services:
     environment:
       <<: *airflow-common-env
       DUMB_INIT_SETSID: '0'
+    healthcheck:
+      test: ["CMD-SHELL", 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-apiserver:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
 
   airflow-triggerer:
     <<: *airflow-common
     container_name: dp-airflow-triggerer
     command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
 
   airflow-init:
     <<: *airflow-common
     container_name: dp-airflow-init
+    # Roda como root para poder criar diretórios e ajustar permissões
+    user: "0:0"
     entrypoint: /bin/bash
     command:
       - -c
       - |
-        # Airflow 3.x usa 'db migrate' (não mais 'db upgrade')
-        airflow db migrate
-        airflow users create \
-          --username ${AIRFLOW_ADMIN_USER} \
-          --firstname Admin \
-          --lastname User \
-          --role Admin \
-          --email ${AIRFLOW_ADMIN_EMAIL} \
-          --password ${AIRFLOW_ADMIN_PASSWORD}
+        mkdir -p /opt/airflow/{logs,dags,plugins,config}
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/
+        /entrypoint airflow version
+    environment:
+      <<: *airflow-common-env
+      # O entrypoint da imagem oficial lê essas vars e executa db migrate + cria usuário
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+      _PIP_ADDITIONAL_REQUIREMENTS: ''
     restart: on-failure
 
   # ── Visualization ───────────────────────────
